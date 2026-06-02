@@ -1,4 +1,3 @@
-# etu-genai
 
 # Autonomous Routing & Alerting System — Design Summary
 
