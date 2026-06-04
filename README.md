@@ -1,9 +1,8 @@
-
-# Autonomous Routing & Alerting System — Design Summary
+# Autonomous Routing & Alerting System — Summary
 
 Date: 2026-05-29
 
-This document captures the discussion, architecture decisions, and artefacts produced so far for the Agentic PWA that provides symptom-driven pre-arrival notifications to Emergency Treatment Units (ETUs).
+This file captures the full conversation history, architecture recommendations, business flow, technology choices, and UX design discussed for the Agentic emergency routing and notification platform.
 
 ---
 
@@ -15,96 +14,212 @@ The lack of anticipatory patient information/symptoms prior to arrival creates s
 
 Build an Agentic, progressive web application (PWA) that captures symptoms before arrival, uses an Agent (LLM + retrieval) to triage and match destinations, and sends structured pre-arrival notifications to ETUs so clinicians can prepare.
 
-## Rationale (summary)
-- Intelligent, symptom-driven destination matching avoids routing patients to overwhelmed or unequipped facilities.
-- Pre-arrival context (structured symptom data + confidence) lets ETUs prepare resources ahead of arrival, changing the workflow from reactive to anticipatory.
+## Rationale
+- Intelligent, symptom-driven destination matching prevents routing patients to overwhelmed or unequipped hospitals.
+- Pre-arrival structured context allows ETUs to shift from reactive admission to anticipatory preparation.
+- The system reduces entry congestion and accelerates delivery of life-saving interventions.
 
 ---
 
-## High-level Architecture
+## Architecture Summary
 
-Actors: Patient/Caller, PWA (mobile/web), Core API, Agent microservice (Vertex AI), Event Bus (Pub/Sub), Datastore (Postgres+PostGIS), Cache (Redis), Notification channels (FCM/Web Push), ETU Dashboard, EHR/FHIR integration.
+### High-level architecture
+- Frontend: responsive web PWA, offline support, notifications, maps.
+- Backend core: API Gateway and Core API for auth, validation, triage, and routing.
+- Event bus: Pub/Sub or Kafka for reliable async ingestion and delivery.
+- Storage: Postgres + PostGIS for clinical and geospatial data, Redis for cache and pub/sub.
+- Agentic service: Vertex AI for embeddings and generative reasoning.
+- Notifications: FCM, Web Push, signed hospital webhooks.
+- ETU dashboard: clinician UI with real-time acknowledgement via WebSockets.
+- Integration: Healthcare API / FHIR for downstream EHR connectivity.
 
-Key principles: progressive enhancement, offline-first, security & privacy, auditable agent calls, human-in-the-loop for low-confidence or high-risk cases.
-
----
-
-## Technology Choices (finalized / recommended)
-
-- Frontend: React + TypeScript (Vite) with VitePWA; Tailwind CSS or MUI; Mapbox GL JS (or Google Maps); Web Push (VAPID) + FCM; optional Capacitor wrapper.
-- Backend Core API: FastAPI (Python) on Cloud Run (or NestJS if TypeScript preferred).
-- Database: Cloud SQL / PostgreSQL + PostGIS; pgvector for local vector storage (or Vertex Index / Pinecone for managed vector indexing).
-- Agentic service: Python + FastAPI microservice calling Vertex AI (Generative + Embeddings); host on Cloud Run.
-- Eventing: Google Cloud Pub/Sub for ingestion and fan-out (or Kafka for on-prem/high-throughput).
-- Real-time: WebSockets / Socket.IO for ETU dashboards; Redis for low-latency pub/sub and locks.
-- Notifications: Firebase Cloud Messaging (FCM) and Web Push; hospital webhooks (signed JWT) to ETU endpoints.
-- Orchestration: Cloud Tasks / Workflows or Temporal for durable, retryable agent flows.
-- Observability: Cloud Logging / Prometheus + Grafana; store model call logs to secure GCS for audit.
-- CI/CD / Infra: GitHub Actions or Cloud Build, Terraform, Helm charts for K8s.
-- Security & Compliance: OAuth2/OIDC, TLS, Secret Manager, IAM roles, Cloud Audit Logs, HIPAA BAA as required.
-
-MVP fast path: React+Vite PWA, FastAPI agent + Cloud Run, Cloud SQL (Postgres + pgvector), Vertex AI for LLM + embeddings, FCM + Web Push.
+### Key principles
+- Progressive enhancement
+- Offline-first experience
+- Secure, privacy-aware design
+- Auditability for model and PHI events
+- Human-in-the-loop on low-confidence / high-risk decisions
+- Clear service boundaries for mixed backend stack
 
 ---
 
-## Agentic Design (Vertex AI)
-- Use Vertex AI Generative Models (text-bison or current) for plan generation and classification.
-- Use Vertex AI Embeddings + Vertex Index / Matching Engine for retrieval (or pgvector/Pinecone for MVP).
-- Build an Agent microservice that: accepts symptom payloads, computes embeddings, retrieves context, calls Vertex generative model to produce severity, ranked ETU list, and a pre-arrival task list.
-- Keep audit logs of model inputs & outputs (GCS, Cloud SQL links), record model confidence, and include rule-based fallbacks.
+## Technology Stack Recommendation
 
-IAM: service account with minimal roles e.g., `roles/aiplatform.user` and access to GCS and Pub/Sub.
+### Frontend
+- React + TypeScript (Vite) for the PWA.
+- Tailwind CSS or MUI for styling.
+- Mapbox GL JS or Google Maps for routing and ETA.
+- VitePWA / Workbox for service worker and offline caching.
+- Web Push (VAPID) and Firebase Cloud Messaging (FCM).
+- Optional Capacitor wrapper for native packaging.
+- Micro frontend pattern with Module Federation or single-spa for large teams.
+- React Native as a separate mobile companion app, if native support is required.
 
----
+### Backend
+- Core API: FastAPI (Python) or Spring Boot (Java) for transactional and enterprise services.
+- Agentic AI: Python + FastAPI for Vertex AI integration.
+- Database: PostgreSQL + PostGIS for geospatial and clinical data.
+- Vector search: pgvector or Vertex AI Index / Matching Engine.
+- Cache: Redis for low-latency data and coordination.
+- Message bus: Pub/Sub or Kafka for event-driven architecture.
+- Real-time: WebSockets / Socket.IO for dashboards.
 
-## Frontend Architecture (detailed)
-- Component-based React structure: pages such as `SymptomIntake`, `MapRouting`, `ETUDetail`, `PreArrivalTasks`, `ClinicianDashboard`.
-- State management: Redux Toolkit or Zustand for global state (symptom drafts, candidate ETUs, agent task states, offline queue).
-- Offline & PWA: Service Worker + Background Sync; IndexedDB (LocalForage) for drafts and queued notifications.
-- Agent bridge: small client SDK to call Core API endpoints; show model confidence and allow clinician override.
-- Security: OAuth2/OIDC flows, local encryption for stored sensitive fields when required.
+### Agentic / Vertex AI
+- Vertex AI Generative Models for severity scoring and plan generation.
+- Vertex AI Embeddings for context vectorization.
+- Vertex Matching Engine / Index for retrieval-based matching.
+- GCS or secure object storage for audit logs.
+- Service account IAM with minimal Vertex AI permissions.
 
-Folder layout suggestion:
-```
-src/
-  api/
-  components/
-  features/
-  hooks/
-  state/
-  services/ (agent-client, push-client, idb)
-  sw/ (service worker)
-  App.tsx
-  main.tsx
-```
+### Infrastructure
+- Deploy on Google Cloud Run, Kubernetes, or managed compute.
+- Use Cloud SQL for Postgres and managed Redis if possible.
+- CI/CD: GitHub Actions or Cloud Build.
+- IaC: Terraform and Helm.
+- Observability: Cloud Logging, Prometheus, Grafana, Sentry.
 
----
-
-## Business Process Flow (end-to-end)
-1. Symptom Capture: Patient/caller completes guided symptom intake on PWA (structured codes + free text + location + consent).
-2. Local Triage: App runs rule-based red-flag checks to immediately instruct emergency actions if needed.
-3. Submit & Enqueue: App submits to `POST /api/v1/intake`; Core API enqueues event to Pub/Sub and returns ack.
-4. Agentic Analysis: Agent microservice consumes event, computes embeddings, performs RAG, runs generative model to produce severity, ranked ETUs, recommended pre-arrival tasks.
-5. Destination Selection & Escalation: Agent picks top ETU; low-confidence or high-risk triggers human-in-loop.
-6. Notify Stakeholders: Core API sends pre-arrival notification to ETU (webhook + dashboard), pushes to EMS/patient (FCM/WebPush).
-7. ETU Acknowledgement & Prep: ETU accepts/rejects; acceptance triggers resource allocation.
-8. Real-time Updates: ETA or status updates flow to Core API → Agent recalculates → ETU & EMS updated.
-9. Arrival & Handoff: Final packet and audit trail delivered; handoff performed.
-10. Outcome & Feedback: ETU records outcome; data used to retrain models and update metrics.
-11. Auditing & Compliance: All model calls, notifications, and PHI handling logged and access-controlled.
-
-Decision rules: immediate red-flags bypass agent; HIL threshold for low confidence; re-route SLA for ETU rejection.
-
-SLA examples: ack <2s, agent recommendation <5s (async acceptable), notification delivery <10s, re-route <15s.
+### Security & Compliance
+- OAuth2 / OpenID Connect authentication.
+- TLS for all traffic.
+- Secret Manager and IAM least privilege.
+- Audit logs for PHI and model calls.
+- Privacy-first design with minimal PHI in payloads.
+- HIPAA / GDPR controls where applicable.
 
 ---
 
-## Entry Point (API Contract)
-- Canonical programmatic entry: `POST /api/v1/intake` (API Gateway / Cloud Run)
-- Requirements: `Authorization: Bearer <token>`, `request_id` for idempotency.
+## Agentic Architecture & Technical Flow
 
-Example request body (JSON):
+### Ingestion and processing
+1. User submits symptom intake via the PWA.
+2. Core API validates, authenticates, and performs red-flag checks.
+3. Intake event is published to Pub/Sub / event bus.
+4. Agent microservice consumes the event.
+5. Agent service computes embeddings and performs retrieval.
+6. Vertex AI generative model returns severity, ranked destination list, and pre-arrival plan.
+7. The results are stored in the database and returned to the Core API.
+8. Notifications are delivered to ETUs, EMS, and patient/browser.
+9. ETU dashboard updates in real time and acknowledges or rejects the case.
+10. Outcome and feedback data are used for continuous learning.
 
+### Detailed technical flow
+- The PWA sends `POST /api/v1/intake` to the API gateway.
+- The Core API handles idempotency and publishes to the event bus.
+- The Agent service performs Vector + RAG retrieval, invokes Vertex AI, and persists decisions.
+- The Core API sends notifications through FCM/Web Push and secure hospital webhooks.
+- ETU dashboard receives the case and updates status through real-time channels.
+- FHIR integration is used for hospital EHR interoperability.
+
+---
+
+## Frontend Architecture
+
+### Component structure
+- `SymptomIntake`
+- `MapRouting`
+- `ETUDetail`
+- `PreArrivalTasks`
+- `ClinicianDashboard`
+- `ChatbotAssistant`
+
+### State management
+- Redux Toolkit or Zustand.
+- Store symptom drafts, ETU candidates, agent state, offline queue, auth.
+- Use selectors for derived state such as ETA and route ranking.
+
+### Offline / PWA features
+- Service Worker with cache strategies.
+- IndexedDB via LocalForage for drafts and queued submissions.
+- Background sync for offline retry.
+- Installable manifest and responsive layout.
+
+### Agent integration
+- Small client SDK for agentic API calls.
+- Send structured symptom payloads and receive decision packages.
+- Display model confidence and allow clinician override.
+
+---
+
+## Business Process Flow
+
+### User journey
+1. User lands on the mobile welcome screen.
+2. The app offers large emergency buttons and an agentic chatbot entry.
+3. If unsure, the user selects `Help Me Decide` and interacts with the chatbot.
+4. The chatbot collects symptoms conversationally.
+5. Structured intake data is generated and submitted.
+6. The Agent evaluates urgency and ETU suitability.
+7. The system selects the best destination and generates pre-arrival instructions.
+8. Notifications are delivered to the ETU and EMS.
+9. The ETU accepts or rejects, and resources are prepared.
+10. Arrival is confirmed and handoff occurs.
+11. Outcomes are captured for continuous improvement.
+
+### Decision points
+- Immediate emergency bypass for critical red-flag symptoms.
+- Agent confidence threshold to trigger human review.
+- ETU rejection causes re-routing and new notification.
+- Minimal PHI in initial payloads.
+
+### SLAs
+- Intake ack: < 2 seconds.
+- Agent recommendation: < 5 seconds for async response.
+- Notification delivery: < 10 seconds.
+- Re-route decision after rejection: < 15 seconds.
+
+---
+
+## Mobile Welcome Screen UX
+
+### Recommended system entry
+- Start with a mobile landing page that includes:
+  - Welcome message
+  - emergency quick-action buttons
+  - agentic chatbot button
+  - local language support
+
+### Emergency buttons for Sri Lanka
+- `Ambulance` / `ඇම්බුලන්ස්` / `அம்புலன்ஸ்`
+- `Chest Pain / Heart` / `හෘද වේදනාව` / `மாரடைப்பு`
+- `Breathing Trouble` / `ශ්වසන අපහසුතාව` / `சுவாசம் கடும்`
+- `Accident / Injury` / `දිවාපත / රබර` / `அத்தாட்சிப்`
+- `Stroke / Weakness` / `ස්ට්‍රෝක් / දුර්වලතාව` / `ஸ்ட்ரோக்`
+- `Pregnancy Emergency` / `ගර්භණී තත්ත්වය` / `கர்ப்ப கால அவசரம்`
+- `Help Me Decide` / `මට උදව් කරන්න` / `எனக்கு உதவி செய்ய`
+
+### UX behavior
+- Large, easy-to-tap buttons.
+- Local language and icons.
+- Visible emergency number and quick action.
+- Agentic chat available for uncertain cases.
+- Emergency bypass for critical conditions.
+
+---
+
+## Micro Frontend and Mixed Backend Approach
+
+### Frontend
+- Micro frontends for the PWA with Module Federation or single-spa.
+- Shared design system for consistency.
+- Separate React Native mobile app if native is required.
+
+### Backend
+- Spring Boot for transactional core services and enterprise integration.
+- Python + FastAPI for Agentic AI and Vertex AI orchestration.
+- Clear APIs and event-driven messaging between services.
+
+---
+
+## Entry Point API Contract
+
+### Endpoint
+`POST /api/v1/intake`
+
+### Required headers
+- `Authorization: Bearer <token>`
+- `Content-Type: application/json`
+
+### Example payload
 ```json
 {
   "request_id": "uuid-v4",
@@ -117,55 +232,23 @@ Example request body (JSON):
 }
 ```
 
-Server responsibilities on receipt: immediate red-flag check, enqueue event, persist intake metadata, trigger async agent workflow.
-
 ---
 
-## Epics (from earlier)
-- Symptom Intake & PWA
-- Immediate Triage & Red‑Flag Handling
-- Agentic Analysis & Decisioning (Vertex AI)
-- Destination Matching & Routing
-- Pre‑Arrival Notification & Delivery
-- ETU Dashboard & Clinician Workflow
-- Real‑time Updates & Transport Coordination
-- Data Integration & EHR/FHIR Connectivity
-- Security, Privacy & Compliance
-- Observability, Metrics & Continuous Learning
-- Admin, Configuration & Hospital Onboarding
-- CI/CD, Testing & Deployment Automation
+## Mermaid Architecture Diagram
 
----
-
-## Current TODO (project plan)
-- Define requirements & constraints — Completed
-- Select frontend stack — Completed
-- Select backend stack & infra — In progress
-- Design data & integrations — In progress
-- Implement real-time & notifications — Not started
-- Security & compliance — Not started
-- CI/CD, testing & observability — Not started
-
----
-
-## Mermaid Architecture Diagrams
-
-Basic solution architecture (paste into Mermaid/eraser):
+### Basic architecture
 
 ```mermaid
 flowchart LR
-  %% Actors & Frontend
   User[User / EMS / Caller]
   PWA["PWA (React + TypeScript)\nService Worker, IndexedDB\nMapbox, WebPush/FCM"]
   User --> PWA
 
-  %% API ingress & core
   APIGW["API Gateway / Cloud Run\nPOST /api/v1/intake"]
   PWA --> APIGW
   Core["Core API (Cloud Run / FastAPI)\nAuth, validation, red-flag rules"]
   APIGW --> Core
 
-  %% Event bus, storage, cache
   PubSub["Pub/Sub / Event Bus"]
   Core --> PubSub
   DB["Cloud SQL (Postgres + PostGIS)\npgvector or Vertex Index"]
@@ -173,7 +256,6 @@ flowchart LR
   Redis["Redis (cache, locks, low-latency pub/sub)"]
   Core --> Redis
 
-  %% Agentic service + Vertex AI
   AgentSvc["Agent Microservice (Cloud Run / FastAPI)\nVertex AI client"]
   PubSub --> AgentSvc
   VertexEmb["Vertex AI Embeddings"]
@@ -185,7 +267,6 @@ flowchart LR
   AgentSvc --> DB
   AgentSvc --> Core
 
-  %% Notifications & ETU
   FCM["FCM / Web Push"]
   Core --> FCM
   Webhooks["Hospital Webhooks (signed)\nCloud Run endpoints"]
@@ -194,110 +275,81 @@ flowchart LR
   Webhooks --> ETU
   ETU --> Core
 
-  %% EHR & integrations
   FHIR["Healthcare API (FHIR)"]
   Core --> FHIR
   AgentSvc --> FHIR
-
-  %% Observability, audit, CI/CD
-  GCS["GCS (model logs, audit)"]
-  VertexGen --> GCS
-  Logging["Cloud Logging / Monitoring\nPrometheus & Grafana"]
-  Core --> Logging
-  AgentSvc --> Logging
-  CICD["CI/CD (Cloud Build / GitHub Actions)\nTerraform / Helm"]
-  CICD --> APIGW
-  CICD --> AgentSvc
-  CICD --> Core
-
-  %% Styling
-  classDef infra fill:#f4f7ff,stroke:#1f6feb;
-  class APIGW,Core,PubSub,DB,Redis,AgentSvc,VertexEmb,VertexGen,Index,FCM,Webhooks,ETU,FHIR,GCS,Logging,CICD infra;
 ```
 
-Enhanced (emoji/icons) Mermaid diagram:
+### Enhanced diagram with icons
 
 ```mermaid
 %%{init: { "securityLevel": "loose" }}%%
 flowchart LR
-  %% Actors & Frontend
-  User["🧑‍⚕️ User / EMS / Caller"]
-  PWA["📱 PWA (React + TypeScript)\nService Worker, IndexedDB\nMapbox, WebPush/FCM"]
-  User --> PWA
+  subgraph Frontend["Frontend"]
+    User["🧑‍⚕️ User / EMS / Caller"]
+    PWA["📱 PWA (React + TypeScript)\nService Worker, IndexedDB\nMapbox, WebPush/FCM"]
+    User --> PWA
+  end
 
-  %% API ingress & core
-  APIGW["🌐 API Gateway / Cloud Run\nPOST /api/v1/intake"]
-  PWA --> APIGW
-  Core["⚙️ Core API (Cloud Run / FastAPI)\nAuth, validation, red-flag rules"]
-  APIGW --> Core
+  subgraph API["API / Core"]
+    APIGW["🌐 API Gateway / Cloud Run\nPOST /api/v1/intake"]
+    Core["⚙️ Core API (FastAPI)\nAuth, validation, red-flag rules"]
+    APIGW --> Core
+  end
 
-  %% Event bus, storage, cache
-  PubSub["📣 Pub/Sub / Event Bus"]
-  Core --> PubSub
-  DB["🗄️ Cloud SQL (Postgres + PostGIS)\npgvector or Vertex Index"]
-  Core --> DB
-  Redis["⚡ Redis (cache, locks, low-latency pub/sub)"]
-  Core --> Redis
+  subgraph Data["Data & Cache"]
+    PubSub["📣 Pub/Sub / Event Bus"]
+    DB["🗄️ Cloud SQL (Postgres + PostGIS)\npgvector or Vertex Index"]
+    Redis["⚡ Redis (cache, locks, low-latency pub/sub)"]
+    Core --> PubSub
+    Core --> DB
+    Core --> Redis
+  end
 
-  %% Agentic service + Vertex AI
-  AgentSvc["🤖 Agent Microservice (Cloud Run / FastAPI)\nVertex AI client"]
-  PubSub --> AgentSvc
-  VertexEmb["🧭 Vertex AI Embeddings"]
-  VertexGen["🧠 Vertex AI Generative Models"]
-  AgentSvc --> VertexEmb
-  AgentSvc --> VertexGen
-  Index["🔎 Vertex Matching Engine / Index"]
-  VertexEmb --> Index
-  AgentSvc --> DB
-  AgentSvc --> Core
+  subgraph Agent["Agentic Service"]
+    AgentSvc["🤖 Agent Microservice\nCloud Run / FastAPI"]
+    VertexEmb["🧭 Vertex AI Embeddings"]
+    VertexGen["🧠 Vertex AI Generative Models"]
+    Index["🔎 Vertex Matching Engine / Index"]
+    PubSub --> AgentSvc
+    AgentSvc --> VertexEmb
+    AgentSvc --> VertexGen
+    VertexEmb --> Index
+    AgentSvc --> DB
+    AgentSvc --> Core
+  end
 
-  %% Notifications & ETU
-  FCM["🔔 FCM / Web Push"]
-  Core --> FCM
-  Webhooks["🔐 Hospital Webhooks (signed)\nCloud Run endpoints"]
-  Core --> Webhooks
-  ETU["🏥 ETU Dashboard / Clinician UI\n(WebSocket / Cloud Run)"]
-  Webhooks --> ETU
-  ETU --> Core
+  subgraph Delivery["Notifications & ETU"]
+    FCM["🔔 FCM / Web Push"]
+    Webhooks["🔐 Hospital Webhooks\nCloud Run endpoints"]
+    ETU["🏥 ETU Dashboard / Clinician UI\nWebSocket / Cloud Run"]
+    Core --> FCM
+    Core --> Webhooks
+    Webhooks --> ETU
+    ETU --> Core
+  end
 
-  %% EHR & integrations
-  FHIR["🩺 Healthcare API (FHIR)"]
-  Core --> FHIR
-  AgentSvc --> FHIR
+  subgraph Integration["Integration & Observability"]
+    FHIR["🩺 Healthcare API (FHIR)"]
+    GCS["📁 GCS (model logs, audit)"]
+    Logging["📊 Cloud Logging / Monitoring\nPrometheus & Grafana"]
+    CICD["🚀 CI/CD\nCloud Build / GitHub Actions\nTerraform / Helm"]
+    Core --> FHIR
+    AgentSvc --> FHIR
+    VertexGen --> GCS
+    Core --> Logging
+    AgentSvc --> Logging
+    CICD --> APIGW
+    CICD --> AgentSvc
+    CICD --> Core
+  end
 
-  %% Observability, audit, CI/CD
-  GCS["📁 GCS (model logs, audit)"]
-  VertexGen --> GCS
-  Logging["📊 Cloud Logging / Monitoring\nPrometheus & Grafana"]
-  Core --> Logging
-  AgentSvc --> Logging
-  CICD["🚀 CI/CD (Cloud Build / GitHub Actions)\nTerraform / Helm"]
-  CICD --> APIGW
-  CICD --> AgentSvc
-  CICD --> Core
-
-  %% Styling
-  classDef infra fill:#f4f7ff,stroke:#1f6feb;
-  class APIGW,Core,PubSub,DB,Redis,AgentSvc,VertexEmb,VertexGen,Index,FCM,Webhooks,ETU,FHIR,GCS,Logging,CICD infra;
+  classDef platform fill:#eef6ff,stroke:#3b82f6,stroke-width:2px;
+  class Frontend,API,Data,Agent,Delivery,Integration platform;
 ```
 
-> Note: If you prefer real SVG brand icons instead of emojis, we can embed image URLs, but some Mermaid renderers (or Eraser) may require `securityLevel` adjustments or HTML allowance.
-
 ---
 
-## Next recommended steps
-- Confirm choice of backend language (FastAPI vs NestJS) and whether Cloud Run / Kubernetes will be used.
-- Scaffold a minimal repo: React PWA + Core API `POST /api/v1/intake` + Agent microservice stub calling Vertex AI.
-- Implement secure auth (OIDC) and a simple ETU dashboard stub with WebSocket acks.
-
-If you want, I can scaffold the MVP repo (files + minimal runnable example) next.
-
----
-
-## Conversation artifacts
-- API contract examples, mermaid diagrams (above), todo list state, epics and decision rules are included in this document.
-
-
-*End of summary.*
-
-
+## Notes
+This `summary.md` is the fresh consolidated record of the chat history, architecture design, system flow, and UX details through the welcome screen discussion.
+'@
